@@ -1,8 +1,14 @@
 use bs58;
-use solana_client::rpc_client::RpcClient;
-use solana_sdk::signature::{read_keypair_file, Keypair, Signer};
-use std::io::{self, BufRead};
+use solana_client::{nonblocking::rpc_client, rpc_client::RpcClient};
+use solana_program::{pubkey::Pubkey, system_instruction::transfer};
 
+use solana_sdk::{
+    blake3::hash,
+    signature::{read_keypair_file, Keypair, Signer},
+    transaction::Transaction,
+};
+use std::io::{self, BufRead};
+use std::str::FromStr;
 
 const RPC_URL: &str = "https://api.devnet.solana.com";
 
@@ -48,20 +54,59 @@ fn keygen() {
     println!("{:?}", kp.to_bytes());
 }
 
-
 #[test]
-fn airdrop(){
+fn airdrop() {
     let keypair = read_keypair_file("src/dev-wallet.json").expect("Incorrect wallet location");
-    
 
     let client = RpcClient::new(RPC_URL);
 
-    match client.request_airdrop(&keypair.pubkey(),2_000_000_000){
-        Ok(s)=>{
+    match client.request_airdrop(&keypair.pubkey(), 2_000_000_000) {
+        Ok(s) => {
             println!("Airdropped successfully! Check txn here: ");
-            println!("https://explorer.solana.com/tx/{}?cluster=devnet", s.to_string());
-        },
-        Err(e) => println!("Oops, something went wrong: {}", e.to_string())
-    
+            println!(
+                "https://explorer.solana.com/tx/{}?cluster=devnet",
+                s.to_string()
+            );
+        }
+        Err(e) => println!("Oops, something went wrong: {}", e.to_string()),
     }
+}
+
+#[test]
+fn transfer_sol() {
+    let keypair = read_keypair_file("src/dev-wallet.json").expect("Incorrect wallet location");
+
+    let client = RpcClient::new(RPC_URL);
+
+    let pubkey = keypair.pubkey();
+    let message_bytes = b"I verified my solana keypair!";
+    let sig = keypair.sign_message(message_bytes);
+    let sig_hashed = hash(sig.as_ref());
+
+    match sig.verify(&pubkey.to_bytes(), &sig_hashed.to_bytes()) {
+        true => println!("Signature verified!"),
+        false => println!("Verification of signature failed!"),
+    }
+
+    let to_pubkey = Pubkey::from_str("5P5z8bf9bmZvXaQoQB93pci4LuarBMKwa4Uhnzbjc3gG").unwrap();
+
+    let recent_blockhash = client
+        .get_latest_blockhash()
+        .expect("Failed to get recent blockhash");
+
+    let txn = Transaction::new_signed_with_payer(
+        &[transfer(&keypair.pubkey(), &to_pubkey, 1_000_000)],
+        Some(&keypair.pubkey()),
+        &vec![&keypair],
+        recent_blockhash,
+    );
+
+    let signature = client
+        .send_and_confirm_transaction(&txn)
+        .expect("Failed to send txn");
+
+    println!(
+        "Success! Check out your TX here: https://explorer.solana.com/tx/{}/?cluster=devnet",
+        signature
+    );
 }
