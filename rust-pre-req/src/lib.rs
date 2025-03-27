@@ -4,6 +4,7 @@ use solana_program::{pubkey::Pubkey, system_instruction::transfer};
 
 use solana_sdk::{
     blake3::hash,
+    message::Message,
     signature::{read_keypair_file, Keypair, Signer},
     transaction::Transaction,
 };
@@ -73,7 +74,7 @@ fn airdrop() {
 }
 
 #[test]
-fn transfer_sol() {
+fn transfer_some_sol() {
     let keypair = read_keypair_file("src/dev-wallet.json").expect("Incorrect wallet location");
 
     let client = RpcClient::new(RPC_URL);
@@ -97,6 +98,51 @@ fn transfer_sol() {
     let txn = Transaction::new_signed_with_payer(
         &[transfer(&keypair.pubkey(), &to_pubkey, 1_000_000)],
         Some(&keypair.pubkey()),
+        &vec![&keypair],
+        recent_blockhash,
+    );
+
+    let signature = client
+        .send_and_confirm_transaction(&txn)
+        .expect("Failed to send txn");
+
+    println!(
+        "Success! Check out your TX here: https://explorer.solana.com/tx/{}/?cluster=devnet",
+        signature
+    );
+}
+
+#[test]
+fn transfer_all_sol() {
+    let keypair = read_keypair_file("src/dev-wallet.json").expect("Incorrect wallet location");
+
+    let client = RpcClient::new(RPC_URL);
+
+    let pubkey = keypair.pubkey();
+
+    let balance = client
+        .get_balance(&pubkey)
+        .expect("Failed to fetch balance");
+
+    let to_pubkey = Pubkey::from_str("5P5z8bf9bmZvXaQoQB93pci4LuarBMKwa4Uhnzbjc3gG").unwrap();
+
+    let recent_blockhash = client
+        .get_latest_blockhash()
+        .expect("Failed to get recent blockhash");
+
+    let transfer_ix = &[transfer(&pubkey, &to_pubkey, balance)];
+
+    let message = Message::new_with_blockhash(transfer_ix, Some(&pubkey), &recent_blockhash);
+
+    let fee = client
+        .get_fee_for_message(&message)
+        .expect("Failed to get fee");
+
+    let full_transfer_ix = &[transfer(&pubkey, &to_pubkey, balance - fee)];
+
+    let txn = Transaction::new_signed_with_payer(
+        full_transfer_ix,
+        Some(&pubkey),
         &vec![&keypair],
         recent_blockhash,
     );
