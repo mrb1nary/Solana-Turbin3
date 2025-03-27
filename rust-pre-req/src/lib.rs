@@ -6,10 +6,14 @@ use solana_sdk::{
     blake3::hash,
     message::Message,
     signature::{read_keypair_file, Keypair, Signer},
+    system_program,
     transaction::Transaction,
 };
+
+use crate::programs::Turbin3_prereq::{CompleteArgs, TurbinePrereqProgram, UpdateArgs};
 use std::io::{self, BufRead};
 use std::str::FromStr;
+mod programs;
 
 const RPC_URL: &str = "https://api.devnet.solana.com";
 
@@ -150,6 +154,40 @@ fn transfer_all_sol() {
     let signature = client
         .send_and_confirm_transaction(&txn)
         .expect("Failed to send txn");
+
+    println!(
+        "Success! Check out your TX here: https://explorer.solana.com/tx/{}/?cluster=devnet",
+        signature
+    );
+}
+
+#[test]
+fn finalSubmission() {
+    let signer = read_keypair_file("./src/turbine-wallet.json").expect("Couldn't find wallet file");
+
+    let client = RpcClient::new(RPC_URL);
+    let prereq = TurbinePrereqProgram::derive_program_address(&[
+        b"prereq",
+        signer.pubkey().to_bytes().as_ref(),
+    ]);
+    let args = CompleteArgs {
+        github: b"mrb1nary".to_vec(),
+    };
+    let blockhash = client
+        .get_latest_blockhash()
+        .expect("Failed to get recent blockhash");
+
+    let transaction = TurbinePrereqProgram::complete(
+        &[&signer.pubkey(), &prereq, &system_program::id()],
+        &args,
+        Some(&signer.pubkey()),
+        &[&signer],
+        blockhash,
+    );
+
+    let signature = client
+        .send_and_confirm_transaction(&transaction)
+        .expect("Failed to send transaction");
 
     println!(
         "Success! Check out your TX here: https://explorer.solana.com/tx/{}/?cluster=devnet",
